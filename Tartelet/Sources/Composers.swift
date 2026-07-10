@@ -1,4 +1,5 @@
 import FileSystemData
+import Foundation
 import GitHubData
 import GitHubDomain
 import Keychain
