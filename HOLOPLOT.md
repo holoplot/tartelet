@@ -21,6 +21,9 @@ background process in an active WindowServer session.
 
 Runner logs: `~/Library/Logs/tartelet/actions-runner.log` inside the VM.
 
+LaunchAgents default to working directory `/`; the plist sets `WorkingDirectory`
+to the auto-login user's home (Terminal.app did this implicitly).
+
 ## Keychain (Holoplot ad-hoc releases)
 
 Upstream Tartelet uses Shape's Apple Developer keychain access group

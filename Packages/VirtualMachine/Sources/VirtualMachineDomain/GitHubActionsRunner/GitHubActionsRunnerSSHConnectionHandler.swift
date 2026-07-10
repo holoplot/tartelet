@@ -52,6 +52,7 @@ public struct GitHubActionsRunnerSSHConnectionHandler: VirtualMachineSSHConnecti
         try await connection.executeCommand("""
 cat > \(startRunnerScriptFilePath) << EOF
 #!/bin/zsh
+cd "$HOME"
 ACTIONS_RUNNER_ARCHIVE=./actions-runner.tar.gz
 ACTIONS_RUNNER_DIRECTORY=~/actions-runner
 
@@ -119,8 +120,9 @@ EOF
         // Runner.Listener headlessly; Terminal as the automation parent breaks
         // TCC attribution (osascript → Finder prompts during DMG bundling).
         try await connection.executeCommand("""
-mkdir -p ~/Library/LaunchAgents ~/Library/Logs/tartelet
-cat > ~/Library/LaunchAgents/net.tartelet.actions-runner.plist << EOF
+home=$(cd ~ && pwd)
+mkdir -p "$home/Library/LaunchAgents" "$home/Library/Logs/tartelet"
+cat > "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -130,20 +132,24 @@ cat > ~/Library/LaunchAgents/net.tartelet.actions-runner.plist << EOF
   <key>ProgramArguments</key>
   <array>
     <string>/bin/zsh</string>
-    <string>${HOME}/start-runner.sh</string>
+    <string>$home/start-runner.sh</string>
   </array>
+  <key>WorkingDirectory</key>
+  <string>$home</string>
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>${HOME}/Library/Logs/tartelet/actions-runner.log</string>
+  <string>$home/Library/Logs/tartelet/actions-runner.log</string>
   <key>StandardErrorPath</key>
-  <string>${HOME}/Library/Logs/tartelet/actions-runner.log</string>
+  <string>$home/Library/Logs/tartelet/actions-runner.log</string>
 </dict>
 </plist>
 EOF
 uid=$(id -u)
+until launchctl print "gui/${uid}" &>/dev/null; do sleep 1; done
 launchctl bootout "gui/${uid}/net.tartelet.actions-runner" 2>/dev/null || true
-launchctl bootstrap "gui/${uid}" ~/Library/LaunchAgents/net.tartelet.actions-runner.plist
+launchctl bootstrap "gui/${uid}" "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist"
+launchctl kickstart -k "gui/${uid}/net.tartelet.actions-runner"
 """)
     }
     private func runnerName(for virtualMachine: VirtualMachine) -> String {
