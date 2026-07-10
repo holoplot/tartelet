@@ -1,10 +1,13 @@
 GENERATE_INFOPLIST_FILE = YES
 CURRENT_PROJECT_VERSION = 1
 MARKETING_VERSION = 0.12.0
-DEVELOPMENT_TEAM = 566MC7D8D4
+// Set DEVELOPMENT_TEAM in Xcode or pass via xcodebuild in CI (APPLE_TEAM_ID secret).
+DEVELOPMENT_TEAM =
+PRODUCT_BUNDLE_IDENTIFIER = com.holoplot.Tartelet
 CODE_SIGN_STYLE = Automatic
 CODE_SIGN_ENTITLEMENTS = Tartelet/Supporting files/Tartelet.entitlements
 MACOSX_DEPLOYMENT_TARGET = 14.0
 ENABLE_HARDENED_RUNTIME = YES
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.developer-tools
 INFOPLIST_KEY_NSLocalNetworkUsageDescription = Used to connect to macOS VMs over the local network
+INFOPLIST_KEY_KeychainAccessGroup = $(DEVELOPMENT_TEAM).com.holoplot.Tartelet

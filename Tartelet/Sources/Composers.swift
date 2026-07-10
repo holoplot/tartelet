@@ -94,7 +94,7 @@ enum Composers {
 
 private extension Composers {
     private static func keychain(logger: Logger) -> Keychain {
-        // Holoplot ad-hoc builds: default keychain (no team-specific access group).
-        Keychain(logger: logger)
+        let accessGroup = Bundle.main.object(forInfoDictionaryKey: "KeychainAccessGroup") as? String
+        return Keychain(logger: logger, accessGroup: accessGroup)
     }
 }

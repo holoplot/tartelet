@@ -68,7 +68,6 @@ mkdir -p "\\$HOME/Library/Logs/tartelet"
 exec >> "\\$LOG" 2>&1
 echo "=== start-runner.sh begin \\$(date) ==="
 set -e pipefail
-set -x
 
 function onexit {
   exit_status=\\$?
@@ -86,10 +85,9 @@ for _ in \\$(seq 1 60); do
 done
 curl -Is https://github.com &>/dev/null
 
-# Install actions-runner when not registered yet (handles partial image trees).
+# Install actions-runner when not registered yet.
 if [[ ! -f "\\$RUNNER_DIR/.runner" ]]; then
   echo "No .runner registration; installing actions-runner into \\$RUNNER_DIR"
-  # Holoplot images <= 20260710 may ship a root-owned TCC placeholder here.
   sudo rm -rf "\\$RUNNER_DIR"
   curl -fLo "\\$RUNNER_ARCHIVE" -L "\(runnerDownloadURL)"
   mkdir -p "\\$RUNNER_DIR"
@@ -143,15 +141,6 @@ bootstrap_log="$home/.tartelet/launchagent-bootstrap.log"
   echo "=== launchagent bootstrap $(date) ==="
   echo "home=$home uid=$(id -u)"
 
-  # Drop root-owned TCC placeholder trees from older Holoplot VM images.
-  if [ -d "$home/actions-runner" ] && [ ! -f "$home/actions-runner/.runner" ]; then
-    sudo rm -rf "$home/actions-runner"
-  fi
-
-  if ! zsh -n "$home/start-runner.sh" 2>&1; then
-    echo "warning: start-runner.sh syntax check failed; continuing anyway" >&2
-  fi
-
   cat > "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -181,8 +170,7 @@ bootstrap_log="$home/.tartelet/launchagent-bootstrap.log"
 PLIST
 
   uid=$(id -u)
-  echo "Waiting for GUI launchd domain (uid=$uid)..."
-  for attempt in $(seq 1 90); do
+  for attempt in $(seq 1 30); do
     if launchctl print "gui/${uid}" &>/dev/null; then
       echo "GUI launchd domain ready after ${attempt}s"
       break
@@ -192,28 +180,20 @@ PLIST
   if ! launchctl print "gui/${uid}" &>/dev/null; then
     echo "warning: gui/${uid} unavailable; auto-login may still be in progress" >&2
   fi
-  sleep 10
 
   agent_running=false
   launchctl bootout "gui/${uid}/net.tartelet.actions-runner" 2>/dev/null || true
   if launchctl print "gui/${uid}" &>/dev/null; then
     launchctl bootstrap "gui/${uid}" "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist"
-    for attempt in 1 2 3; do
-      launchctl kickstart -k "gui/${uid}/net.tartelet.actions-runner" || true
-      sleep 3
-      if launchctl print "gui/${uid}/net.tartelet.actions-runner" 2>/dev/null | grep -q 'state = running'; then
-        echo "LaunchAgent running after attempt ${attempt}"
-        agent_running=true
-        break
-      fi
-      echo "LaunchAgent not running after attempt ${attempt}; retrying kickstart"
-    done
-    if [ "$agent_running" = false ]; then
+    launchctl kickstart -k "gui/${uid}/net.tartelet.actions-runner" || true
+    sleep 3
+    if launchctl print "gui/${uid}/net.tartelet.actions-runner" 2>/dev/null | grep -q 'state = running'; then
+      echo "LaunchAgent running"
+      agent_running=true
+    else
       echo "warning: LaunchAgent did not reach running state" >&2
       launchctl print "gui/${uid}/net.tartelet.actions-runner" || true
     fi
-  else
-    echo "warning: skipped LaunchAgent bootstrap because gui/${uid} is unavailable" >&2
   fi
 
   if [ "$agent_running" = false ]; then

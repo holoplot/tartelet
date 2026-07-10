@@ -127,21 +127,10 @@ public final class KeychainGitHubCredentialsStore: GitHubCredentialsStore {
 
     public func setPrivateKey(_ privateKeyData: Data?) {
         withMutation(keyPath: \.privateKey) {
-            // Holoplot ad-hoc builds: store PEM as a generic password. SecKey
-            // items (upstream setKey) require keychain-access-groups and fail
-            // with errSecMissingEntitlement (-34018) without a developer team.
-            keychain.removeKey(withTag: KeyTag.privateKey)
-            if let privateKeyData, RSAPrivateKey(privateKeyData) != nil {
-                _ = keychain.setPassword(
-                    privateKeyData,
-                    forAccount: PasswordAccount.privateKey,
-                    belongingToService: serviceName
-                )
+            if let privateKeyData, let key = RSAPrivateKey(privateKeyData) {
+                _ = keychain.setKey(key, withTag: KeyTag.privateKey)
             } else {
-                keychain.removePassword(
-                    forAccount: PasswordAccount.privateKey,
-                    belongingToService: serviceName
-                )
+                keychain.removeKey(withTag: KeyTag.privateKey)
             }
         }
     }

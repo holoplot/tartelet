@@ -20,30 +20,43 @@ Holoplot starts the same script via a **LaunchAgent in the auto-login user's
 background process in an active WindowServer session.
 
 Runner logs: `~/Library/Logs/tartelet/actions-runner.log` inside the VM.
+Bootstrap logs: `~/.tartelet/launchagent-bootstrap.log`.
 
 LaunchAgents default to working directory `/`; the plist sets `WorkingDirectory`
 to the auto-login user's home (Terminal.app did this implicitly).
 
-Holoplot releases wait for the `gui/UID` launchd domain, log bootstrap output to
-`~/.tartelet/launchagent-bootstrap.log`, and start the runner via LaunchAgent
-with a direct `nohup` fallback when bootstrap fails.
+## Signing and keychain
 
-Older Holoplot VM images may ship a **root-owned** `~/actions-runner` TCC
-placeholder; `v0.12.0-holoplot.14+` removes it with `sudo rm -rf` before
-downloading actions-runner.
+Holoplot releases are **Developer ID signed and notarized** (`com.holoplot.Tartelet`).
+Keychain credentials use the app's access group (same pattern as upstream Shape
+builds, with Holoplot's team ID).
 
-## Keychain (Holoplot ad-hoc releases)
+Re-enter GitHub App PEM and VM SSH credentials after upgrading from ad-hoc
+releases or upstream Shape builds — each signing identity uses a separate
+keychain access group.
 
-Upstream Tartelet uses Shape's Apple Developer keychain access group
-(`566MC7D8D4.dk.shape.Tartelet`). Holoplot release builds are ad-hoc signed
-without that team ID, so this fork uses the default app keychain instead.
+### Release CI secrets
 
-The GitHub App PEM is stored as a generic keychain password (not a SecKey item).
-Upstream stores RSA keys as `kSecClassKey`, which requires a developer team
-entitlement and fails with `-34018` on ad-hoc signed builds.
+Repository → Settings → Secrets → Actions:
+
+| Secret | Purpose |
+|--------|---------|
+| `APPLE_CERTIFICATE_P12` | Base64 Developer ID Application `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | `.p12` export password |
+| `APPLE_TEAM_ID` | 10-character team ID |
+| `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` | Notarization (legacy) |
+| `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID`, `APPLE_API_KEY_P8` | Notarization (preferred) |
+
+Create environment **`apple-signing`** with required reviewers (Settings →
+Environments). The release workflow pauses there before importing the certificate.
+
+## Upstreaming
+
+Before opening a PR to framna-dk/tartelet, discuss LaunchAgent startup with
+maintainers. Signing/keychain changes are Holoplot-specific; the behavioral fix
+is LaunchAgent + VM image TCC seeding (see `sw__ci_infra`).
 
 ## Releases
 
-Build and tag from this fork; `sw__ci_infra` installs
-`holoplot/tartelet` release zips on macOS runner hosts (see
-`bare-metal/ansible/roles/macos-tartelet`).
+Build and tag from this fork; `sw__ci_infra` installs release zips on macOS
+runner hosts (`bare-metal/ansible/roles/macos-tartelet`).

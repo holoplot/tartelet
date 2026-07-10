@@ -1,6 +1,6 @@
 name: Tartelet
 options:
-  bundleIdPrefix: dk.shape
+  bundleIdPrefix: com.holoplot
   developmentLanguage: en
 configs:
   Debug: debug
