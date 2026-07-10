@@ -1,0 +1,43 @@
+# Build Tartelet.app and attach Tartelet.zip to tagged releases.
+# Holoplot mac hosts install from holoplot/tartelet releases via Ansible.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install xcodegen swiftgen
+
+      - name: Generate Xcode project
+        run: |
+          xcodegen generate
+          swiftgen
+
+      - name: Build Tartelet
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -scheme Tartelet \
+            -configuration Release \
+            -derivedDataPath DerivedData \
+            -destination "platform=macOS" \
+            build
+          app="DerivedData/Build/Products/Release/Tartelet.app"
+          test -d "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" Tartelet.zip
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Tartelet.zip

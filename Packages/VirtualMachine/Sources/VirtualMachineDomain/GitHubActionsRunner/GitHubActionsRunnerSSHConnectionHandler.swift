@@ -114,7 +114,37 @@ cd \\$ACTIONS_RUNNER_DIRECTORY
 EOF
 """)
         try await connection.executeCommand("chmod +x \(startRunnerScriptFilePath)")
-        try await connection.executeCommand("open -a Terminal \(startRunnerScriptFilePath)")
+        // Start the runner in the auto-login user's GUI session via launchd,
+        // not Terminal.app. Upstream GitHub-hosted macOS runners execute
+        // Runner.Listener headlessly; Terminal as the automation parent breaks
+        // TCC attribution (osascript → Finder prompts during DMG bundling).
+        try await connection.executeCommand("""
+mkdir -p ~/Library/LaunchAgents ~/Library/Logs/tartelet
+cat > ~/Library/LaunchAgents/net.tartelet.actions-runner.plist << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>net.tartelet.actions-runner</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>${HOME}/start-runner.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${HOME}/Library/Logs/tartelet/actions-runner.log</string>
+  <key>StandardErrorPath</key>
+  <string>${HOME}/Library/Logs/tartelet/actions-runner.log</string>
+</dict>
+</plist>
+EOF
+uid=$(id -u)
+launchctl bootout "gui/${uid}/net.tartelet.actions-runner" 2>/dev/null || true
+launchctl bootstrap "gui/${uid}" ~/Library/LaunchAgents/net.tartelet.actions-runner.plist
+""")
     }
     private func runnerName(for virtualMachine: VirtualMachine) -> String {
         let configuredRunnerName = configuration.runnerName
