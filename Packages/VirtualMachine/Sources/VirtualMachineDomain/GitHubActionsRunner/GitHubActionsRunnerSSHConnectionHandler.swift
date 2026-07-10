@@ -134,14 +134,17 @@ echo "Starting run.sh"
 EOF
 """)
         try await connection.executeCommand("chmod +x \(startRunnerScriptFilePath)")
-        // Start the runner in the auto-login user's GUI session via launchd,
-        // not Terminal.app. Upstream GitHub-hosted macOS runners execute
-        // Runner.Listener headlessly; Terminal as the automation parent breaks
-        // TCC attribution (osascript → Finder prompts during DMG bundling).
         try await connection.executeCommand("""
 home=$(cd ~ && pwd)
-mkdir -p "$home/Library/LaunchAgents" "$home/Library/Logs/tartelet"
-cat > "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist" << EOF
+mkdir -p "$home/Library/LaunchAgents" "$home/Library/Logs/tartelet" "$home/.tartelet"
+bootstrap_log="$home/.tartelet/launchagent-bootstrap.log"
+{
+  echo "=== launchagent bootstrap $(date) ==="
+  echo "home=$home uid=$(id -u)"
+
+  zsh -n "$home/start-runner.sh"
+
+  cat > "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -157,18 +160,54 @@ cat > "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist" << EOF
   <string>$home</string>
   <key>RunAtLoad</key>
   <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
   <key>StandardOutPath</key>
   <string>$home/Library/Logs/tartelet/actions-runner.log</string>
   <key>StandardErrorPath</key>
   <string>$home/Library/Logs/tartelet/actions-runner.log</string>
 </dict>
 </plist>
-EOF
-uid=$(id -u)
-until launchctl print "gui/${uid}" &>/dev/null; do sleep 1; done
-launchctl bootout "gui/${uid}/net.tartelet.actions-runner" 2>/dev/null || true
-launchctl bootstrap "gui/${uid}" "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist"
-launchctl kickstart -k "gui/${uid}/net.tartelet.actions-runner"
+PLIST
+
+  uid=$(id -u)
+  echo "Waiting for GUI session (uid=$uid)..."
+  for attempt in $(seq 1 120); do
+    if launchctl print "gui/${uid}" &>/dev/null && pgrep -x WindowServer >/dev/null; then
+      echo "GUI session ready after ${attempt}s"
+      break
+    fi
+    sleep 2
+  done
+  if ! launchctl print "gui/${uid}" &>/dev/null; then
+    echo "error: GUI launchd domain gui/${uid} never became available" >&2
+    launchctl print user/${uid} || true
+    exit 1
+  fi
+  if ! pgrep -x WindowServer >/dev/null; then
+    echo "error: WindowServer is not running; auto-login may have failed" >&2
+    exit 1
+  fi
+  sleep 5
+
+  launchctl bootout "gui/${uid}/net.tartelet.actions-runner" 2>/dev/null || true
+  launchctl bootstrap "gui/${uid}" "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist"
+  for attempt in 1 2 3; do
+    launchctl kickstart -k "gui/${uid}/net.tartelet.actions-runner" || true
+    sleep 3
+    if launchctl print "gui/${uid}/net.tartelet.actions-runner" 2>/dev/null | grep -q 'state = running'; then
+      echo "LaunchAgent running after attempt ${attempt}"
+      exit 0
+    fi
+    echo "LaunchAgent not running after attempt ${attempt}; retrying kickstart"
+  done
+  echo "error: net.tartelet.actions-runner failed to stay running" >&2
+  launchctl print "gui/${uid}/net.tartelet.actions-runner" || true
+  tail -n 50 "$home/Library/Logs/tartelet/actions-runner.log" 2>/dev/null || true
+  exit 1
+} >> "$bootstrap_log" 2>&1
 """)
     }
     private func runnerName(for virtualMachine: VirtualMachine) -> String {

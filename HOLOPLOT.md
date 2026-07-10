@@ -24,11 +24,10 @@ Runner logs: `~/Library/Logs/tartelet/actions-runner.log` inside the VM.
 LaunchAgents default to working directory `/`; the plist sets `WorkingDirectory`
 to the auto-login user's home (Terminal.app did this implicitly).
 
-Holoplot VM images seed TCC grants for `~/actions-runner/bin/Runner.Listener`
-using the build-time `USERNAME` (no filesystem placeholder). Tartelet
-`v0.12.0-holoplot.11+` logs runner startup to
-`~/Library/Logs/tartelet/actions-runner.log`, strips quarantine from downloaded
-binaries, and verifies `.runner` exists after `config.sh`.
+Holoplot releases wait for `WindowServer` before `launchctl bootstrap`, verify
+the agent reaches `state = running`, and log bootstrap output to
+`~/.tartelet/launchagent-bootstrap.log` (readable even when
+`actions-runner.log` is empty).
 
 ## Keychain (Holoplot ad-hoc releases)
 
