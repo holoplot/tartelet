@@ -1,17 +1,19 @@
 # Build Tartelet.app and attach Tartelet.zip to tagged releases.
 # Holoplot mac hosts install from holoplot/tartelet releases via Ansible.
 #
-# Configure repository secrets (Settings → Secrets → Actions):
-#   APPLE_CERTIFICATE_P12       — base64-encoded Developer ID Application .p12
-#   APPLE_CERTIFICATE_PASSWORD  — export password for the .p12
-#   APPLE_TEAM_ID               — 10-character Apple Developer team ID
-#   APPLE_ID                    — Apple ID email for notarization
-#   APPLE_APP_SPECIFIC_PASSWORD — app-specific password (or use ASC API key below)
+# Uses Holoplot org secrets (same names as sw__holocloud / holoforge-release):
+#   DEVELOPERID_APPLICATION_P12_BASE64  — Developer ID Application .p12 (base64)
+#   DEVELOPERID_APPLICATION_P12_PSW     — .p12 export password
+#   APPLE_NOTARIZE_ISSUER_ID            — App Store Connect API issuer UUID
+#   APPLE_NOTARIZE_KEY_ID               — App Store Connect API key ID
+#   APPLE_NOTARIZE_KEY_P8_BASE64        — base64-encoded .p8 private key
 #
-# Optional (preferred over Apple ID password):
-#   APPLE_API_KEY_ID, APPLE_API_ISSUER_ID, APPLE_API_KEY_P8 (base64)
+# Optional password-based notarization fallback:
+#   APPLE_ID, APPLE_NOTARIZATION_PASSWORD
 #
-# Create environment "apple-signing" with required reviewers before first release.
+# Grant this repository access to the org secrets (Settings → Secrets →
+# Organization secrets → Repository access). Create environment "apple-signing"
+# with required reviewers before the first release.
 name: Release
 
 on:
@@ -35,8 +37,8 @@ jobs:
       - name: Import code signing certificate
         uses: apple-actions/import-codesign-certs@v3
         with:
-          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_P12 }}
-          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          p12-file-base64: ${{ secrets.DEVELOPERID_APPLICATION_P12_BASE64 }}
+          p12-password: ${{ secrets.DEVELOPERID_APPLICATION_P12_PSW }}
 
       - name: Generate Xcode project
         run: |
@@ -47,48 +49,75 @@ jobs:
           fi
 
       - name: Build Tartelet
+        env:
+          DEVELOPERID_APPLICATION_P12_BASE64: ${{ secrets.DEVELOPERID_APPLICATION_P12_BASE64 }}
+          DEVELOPERID_APPLICATION_P12_PSW: ${{ secrets.DEVELOPERID_APPLICATION_P12_PSW }}
         run: |
           set -euo pipefail
+          p12="$(mktemp)"
+          printf '%s' "$DEVELOPERID_APPLICATION_P12_BASE64" | base64 -d > "$p12"
+          team_id="$(
+            openssl pkcs12 -in "$p12" -passin "pass:${DEVELOPERID_APPLICATION_P12_PSW}" -nodes -nokeys 2>/dev/null \
+              | openssl x509 -noout -subject \
+              | sed -n 's/.*OU=\([^/]*\).*/\1/p'
+          )"
+          rm -f "$p12"
+          if [ -z "$team_id" ]; then
+            echo "error: could not extract Apple team ID from Developer ID certificate" >&2
+            exit 1
+          fi
+          echo "Using DEVELOPMENT_TEAM=$team_id"
           xcodebuild \
             -scheme Tartelet \
             -configuration Release \
             -derivedDataPath DerivedData \
             -destination "platform=macOS" \
             CODE_SIGN_STYLE=Automatic \
-            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            DEVELOPMENT_TEAM="$team_id" \
             build
           app="DerivedData/Build/Products/Release/Tartelet.app"
           test -d "$app"
           codesign --verify --deep --strict --verbose=2 "$app"
-          ditto -c -k --sequesterRsrc --keepParent "$app" Tartelet-unsigned.zip
 
       - name: Notarize and staple
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
+          APPLE_NOTARIZE_ISSUER_ID: ${{ secrets.APPLE_NOTARIZE_ISSUER_ID }}
+          APPLE_NOTARIZE_KEY_ID: ${{ secrets.APPLE_NOTARIZE_KEY_ID }}
+          APPLE_NOTARIZE_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARIZE_KEY_P8_BASE64 }}
+          DEVELOPERID_APPLICATION_P12_BASE64: ${{ secrets.DEVELOPERID_APPLICATION_P12_BASE64 }}
+          DEVELOPERID_APPLICATION_P12_PSW: ${{ secrets.DEVELOPERID_APPLICATION_P12_PSW }}
         run: |
           set -euo pipefail
           app="DerivedData/Build/Products/Release/Tartelet.app"
 
-          if [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER_ID:-}" ] && [ -n "${APPLE_API_KEY_P8:-}" ]; then
+          if [ -n "${APPLE_NOTARIZE_KEY_ID:-}" ] && [ -n "${APPLE_NOTARIZE_ISSUER_ID:-}" ] && [ -n "${APPLE_NOTARIZE_KEY_P8_BASE64:-}" ]; then
             key_file="$(mktemp)"
-            printf '%s' "$APPLE_API_KEY_P8" | base64 -d > "$key_file"
+            printf '%s' "$APPLE_NOTARIZE_KEY_P8_BASE64" | base64 -d > "$key_file"
             xcrun notarytool store-credentials holoplot-notary \
               --key "$key_file" \
-              --key-id "$APPLE_API_KEY_ID" \
-              --issuer "$APPLE_API_ISSUER_ID"
+              --key-id "$APPLE_NOTARIZE_KEY_ID" \
+              --issuer "$APPLE_NOTARIZE_ISSUER_ID"
             rm -f "$key_file"
             notary_profile="holoplot-notary"
-          else
+          elif [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_NOTARIZATION_PASSWORD:-}" ]; then
+            p12="$(mktemp)"
+            printf '%s' "$DEVELOPERID_APPLICATION_P12_BASE64" | base64 -d > "$p12"
+            team_id="$(
+              openssl pkcs12 -in "$p12" -passin "pass:${DEVELOPERID_APPLICATION_P12_PSW}" -nodes -nokeys 2>/dev/null \
+                | openssl x509 -noout -subject \
+                | sed -n 's/.*OU=\([^/]*\).*/\1/p'
+            )"
+            rm -f "$p12"
             xcrun notarytool store-credentials holoplot-notary \
               --apple-id "$APPLE_ID" \
-              --team-id "$APPLE_TEAM_ID" \
-              --password "$APPLE_APP_SPECIFIC_PASSWORD"
+              --team-id "$team_id" \
+              --password "$APPLE_NOTARIZATION_PASSWORD"
             notary_profile="holoplot-notary"
+          else
+            echo "error: set APPLE_NOTARIZE_* API key secrets or APPLE_ID + APPLE_NOTARIZATION_PASSWORD" >&2
+            exit 1
           fi
 
           ditto -c -k --sequesterRsrc --keepParent "$app" Tartelet-submit.zip

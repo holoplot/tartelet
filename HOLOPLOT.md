@@ -37,18 +37,20 @@ keychain access group.
 
 ### Release CI secrets
 
-Repository → Settings → Secrets → Actions:
+Uses the same Holoplot **organization secrets** as `sw__holocloud` / holoforge:
 
 | Secret | Purpose |
 |--------|---------|
-| `APPLE_CERTIFICATE_P12` | Base64 Developer ID Application `.p12` |
-| `APPLE_CERTIFICATE_PASSWORD` | `.p12` export password |
-| `APPLE_TEAM_ID` | 10-character team ID |
-| `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` | Notarization (legacy) |
-| `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID`, `APPLE_API_KEY_P8` | Notarization (preferred) |
+| `DEVELOPERID_APPLICATION_P12_BASE64` | Developer ID Application `.p12` |
+| `DEVELOPERID_APPLICATION_P12_PSW` | `.p12` export password |
+| `APPLE_NOTARIZE_ISSUER_ID` | App Store Connect API issuer |
+| `APPLE_NOTARIZE_KEY_ID` | API key ID |
+| `APPLE_NOTARIZE_KEY_P8_BASE64` | Base64 `.p8` key |
 
-Create environment **`apple-signing`** with required reviewers (Settings →
-Environments). The release workflow pauses there before importing the certificate.
+Optional notarization fallback: `APPLE_ID`, `APPLE_NOTARIZATION_PASSWORD`.
+
+Grant **holoplot/tartelet** access to these org secrets. Create environment
+**`apple-signing`** with required reviewers.
 
 ## Upstreaming
 
