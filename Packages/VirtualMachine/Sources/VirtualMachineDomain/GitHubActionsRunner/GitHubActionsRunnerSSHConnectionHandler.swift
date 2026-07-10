@@ -78,7 +78,7 @@ function onexit {
 trap onexit EXIT
 
 # Wait for GitHub (max ~5 minutes).
-for _ in {1..60}; do
+for _ in \\$(seq 1 60); do
   if curl -Is https://github.com &>/dev/null; then
     break
   fi
@@ -142,7 +142,9 @@ bootstrap_log="$home/.tartelet/launchagent-bootstrap.log"
   echo "=== launchagent bootstrap $(date) ==="
   echo "home=$home uid=$(id -u)"
 
-  zsh -n "$home/start-runner.sh"
+  if ! zsh -n "$home/start-runner.sh" 2>&1; then
+    echo "warning: start-runner.sh syntax check failed; continuing anyway" >&2
+  fi
 
   cat > "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -173,40 +175,52 @@ bootstrap_log="$home/.tartelet/launchagent-bootstrap.log"
 PLIST
 
   uid=$(id -u)
-  echo "Waiting for GUI session (uid=$uid)..."
-  for attempt in $(seq 1 120); do
-    if launchctl print "gui/${uid}" &>/dev/null && pgrep -x WindowServer >/dev/null; then
-      echo "GUI session ready after ${attempt}s"
+  echo "Waiting for GUI launchd domain (uid=$uid)..."
+  for attempt in $(seq 1 90); do
+    if launchctl print "gui/${uid}" &>/dev/null; then
+      echo "GUI launchd domain ready after ${attempt}s"
       break
     fi
     sleep 2
   done
   if ! launchctl print "gui/${uid}" &>/dev/null; then
-    echo "error: GUI launchd domain gui/${uid} never became available" >&2
-    launchctl print user/${uid} || true
-    exit 1
+    echo "warning: gui/${uid} unavailable; auto-login may still be in progress" >&2
   fi
-  if ! pgrep -x WindowServer >/dev/null; then
-    echo "error: WindowServer is not running; auto-login may have failed" >&2
-    exit 1
-  fi
-  sleep 5
+  sleep 10
 
+  agent_running=false
   launchctl bootout "gui/${uid}/net.tartelet.actions-runner" 2>/dev/null || true
-  launchctl bootstrap "gui/${uid}" "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist"
-  for attempt in 1 2 3; do
-    launchctl kickstart -k "gui/${uid}/net.tartelet.actions-runner" || true
-    sleep 3
-    if launchctl print "gui/${uid}/net.tartelet.actions-runner" 2>/dev/null | grep -q 'state = running'; then
-      echo "LaunchAgent running after attempt ${attempt}"
-      exit 0
+  if launchctl print "gui/${uid}" &>/dev/null; then
+    launchctl bootstrap "gui/${uid}" "$home/Library/LaunchAgents/net.tartelet.actions-runner.plist"
+    for attempt in 1 2 3; do
+      launchctl kickstart -k "gui/${uid}/net.tartelet.actions-runner" || true
+      sleep 3
+      if launchctl print "gui/${uid}/net.tartelet.actions-runner" 2>/dev/null | grep -q 'state = running'; then
+        echo "LaunchAgent running after attempt ${attempt}"
+        agent_running=true
+        break
+      fi
+      echo "LaunchAgent not running after attempt ${attempt}; retrying kickstart"
+    done
+    if [ "$agent_running" = false ]; then
+      echo "warning: LaunchAgent did not reach running state" >&2
+      launchctl print "gui/${uid}/net.tartelet.actions-runner" || true
     fi
-    echo "LaunchAgent not running after attempt ${attempt}; retrying kickstart"
-  done
-  echo "error: net.tartelet.actions-runner failed to stay running" >&2
-  launchctl print "gui/${uid}/net.tartelet.actions-runner" || true
-  tail -n 50 "$home/Library/Logs/tartelet/actions-runner.log" 2>/dev/null || true
-  exit 1
+  else
+    echo "warning: skipped LaunchAgent bootstrap because gui/${uid} is unavailable" >&2
+  fi
+
+  if [ "$agent_running" = false ]; then
+    echo "Starting runner directly as bootstrap fallback"
+    nohup /bin/zsh "$home/start-runner.sh" >> "$home/Library/Logs/tartelet/actions-runner.log" 2>&1 &
+    sleep 2
+    if pgrep -f "[s]tart-runner.sh" >/dev/null || pgrep -f "[R]unner.Listener" >/dev/null; then
+      echo "Fallback runner process started"
+    else
+      echo "warning: fallback runner process not detected yet" >&2
+      tail -n 50 "$home/Library/Logs/tartelet/actions-runner.log" 2>/dev/null || true
+    fi
+  fi
 } >> "$bootstrap_log" 2>&1
 """)
     }
