@@ -25,9 +25,8 @@ LaunchAgents default to working directory `/`; the plist sets `WorkingDirectory`
 to the auto-login user's home (Terminal.app did this implicitly).
 
 Holoplot VM images seed TCC grants for `~/actions-runner/bin/Runner.Listener`
-using a build-time placeholder file. `start-runner.sh` treats a missing
-`run.sh` as "not installed" and removes that tree before downloading the real
-runner (see `v0.12.0-holoplot.9`).
+using the build-time `USERNAME` (no filesystem placeholder). Tartelet
+`v0.12.0-holoplot.10+` installs actions-runner when `run.sh` is missing.
 
 ## Keychain (Holoplot ad-hoc releases)
 

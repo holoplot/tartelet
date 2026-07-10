@@ -52,30 +52,36 @@ public struct GitHubActionsRunnerSSHConnectionHandler: VirtualMachineSSHConnecti
         try await connection.executeCommand("""
 cat > \(startRunnerScriptFilePath) << EOF
 #!/bin/zsh
-cd "$HOME"
-ACTIONS_RUNNER_ARCHIVE=./actions-runner.tar.gz
-ACTIONS_RUNNER_DIRECTORY=~/actions-runner
+cd "\\$HOME"
+RUNNER_DIR="\\$HOME/actions-runner"
+RUNNER_ARCHIVE="\\$HOME/actions-runner.tar.gz"
 
 # Ensure the virtual machine is restarted when a job is done.
 set -e pipefail
 function onexit {
+  status=\\$?
+  echo "start-runner.sh exiting with status \\$status at \\$(date)" >> "\\$HOME/Library/Logs/tartelet/actions-runner.log"
   sudo shutdown -h now
 }
 trap onexit EXIT
 
+mkdir -p "\\$HOME/Library/Logs/tartelet"
+
 # Wait until we can connect to GitHub.
 until curl -Is https://github.com &>/dev/null; do :; done
 
-# Image build may leave a TCC placeholder tree without a real runner.
-if [ ! -f \\$ACTIONS_RUNNER_DIRECTORY/run.sh ]; then
-  rm -rf \\$ACTIONS_RUNNER_DIRECTORY
+# Image build must not ship a partial actions-runner tree; install if missing.
+if [[ ! -x "\\$RUNNER_DIR/run.sh" ]]; then
+  rm -rf "\\$RUNNER_DIR"
+  curl -fLo "\\$RUNNER_ARCHIVE" -L "\(runnerDownloadURL)"
+  mkdir -p "\\$RUNNER_DIR"
+  tar xzf "\\$RUNNER_ARCHIVE" --directory "\\$RUNNER_DIR"
 fi
 
-# Download and install the runner if missing.
-if [ ! -f \\$ACTIONS_RUNNER_DIRECTORY/run.sh ]; then
-  curl -o \\$ACTIONS_RUNNER_ARCHIVE -L "\(runnerDownloadURL)"
-  mkdir -p \\$ACTIONS_RUNNER_DIRECTORY
-  tar xzf \\$ACTIONS_RUNNER_ARCHIVE --directory \\$ACTIONS_RUNNER_DIRECTORY
+if [[ ! -x "\\$RUNNER_DIR/run.sh" ]]; then
+  echo "actions-runner install failed: \\$RUNNER_DIR/run.sh missing after extract" >&2
+  ls -la "\\$RUNNER_DIR" >&2 || true
+  exit 1
 fi
 
 # Holds environment passed to runner.
@@ -83,23 +89,23 @@ RUNNER_ENV=""
 
 # Configure pre-run script.
 PRE_RUN_SCRIPT_PATH="\\$HOME/.tartelet/pre-run.sh"
-if [ -f "\\$PRE_RUN_SCRIPT_PATH" ]; then
-  RUNNER_ENV="\\${RUNNER_ENV}ACTIONS_RUNNER_HOOK_JOB_STARTED=\\${PRE_RUN_SCRIPT_PATH}\n"
+if [[ -f "\\$PRE_RUN_SCRIPT_PATH" ]]; then
+  RUNNER_ENV="\\${RUNNER_ENV}ACTIONS_RUNNER_HOOK_JOB_STARTED=\\${PRE_RUN_SCRIPT_PATH}\\n"
 fi
 
 # Configure post-run script.
 POST_RUN_SCRIPT_PATH="\\$HOME/.tartelet/post-run.sh"
-if [ -f "\\$POST_RUN_SCRIPT_PATH" ]; then
-  RUNNER_ENV="\\${RUNNER_ENV}ACTIONS_RUNNER_HOOK_JOB_COMPLETED=\\${POST_RUN_SCRIPT_PATH}\n"
+if [[ -f "\\$POST_RUN_SCRIPT_PATH" ]]; then
+  RUNNER_ENV="\\${RUNNER_ENV}ACTIONS_RUNNER_HOOK_JOB_COMPLETED=\\${POST_RUN_SCRIPT_PATH}\\n"
 fi
 
 # Create .env file in runner's diectory.
-if [ "\\$RUNNER_ENV" != "" ]; then
-  echo \\$RUNNER_ENV >> \\$ACTIONS_RUNNER_DIRECTORY/.env
+if [[ "\\$RUNNER_ENV" != "" ]]; then
+  echo "\\$RUNNER_ENV" >> "\\$RUNNER_DIR/.env"
 fi
 
 # Configure and run the runner.
-cd \\$ACTIONS_RUNNER_DIRECTORY
+cd "\\$RUNNER_DIR"
 ./config.sh\\\\
   --url "\(runnerURL)"\\\\
   --unattended\\\\
