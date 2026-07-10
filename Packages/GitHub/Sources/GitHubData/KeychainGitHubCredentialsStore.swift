@@ -9,6 +9,7 @@ public final class KeychainGitHubCredentialsStore: GitHubCredentialsStore {
         static let repositoryName = "github.credentials.repositoryName"
         static let ownerName = "github.credentials.ownerName"
         static let appId = "github.credentials.appId"
+        static let privateKey = "github.credentials.privateKey"
     }
 
     private enum KeyTag {
@@ -45,7 +46,10 @@ public final class KeychainGitHubCredentialsStore: GitHubCredentialsStore {
     }
     public var privateKey: Data? {
         access(keyPath: \.privateKey)
-        return keychain.key(withTag: KeyTag.privateKey)?.data
+        return keychain.password(
+            forAccount: PasswordAccount.privateKey,
+            belongingToService: serviceName
+        )
     }
 
     private let keychain: Keychain
@@ -123,10 +127,21 @@ public final class KeychainGitHubCredentialsStore: GitHubCredentialsStore {
 
     public func setPrivateKey(_ privateKeyData: Data?) {
         withMutation(keyPath: \.privateKey) {
-            if let privateKeyData, let key = RSAPrivateKey(privateKeyData) {
-                _ = keychain.setKey(key, withTag: KeyTag.privateKey)
+            // Holoplot ad-hoc builds: store PEM as a generic password. SecKey
+            // items (upstream setKey) require keychain-access-groups and fail
+            // with errSecMissingEntitlement (-34018) without a developer team.
+            keychain.removeKey(withTag: KeyTag.privateKey)
+            if let privateKeyData, RSAPrivateKey(privateKeyData) != nil {
+                _ = keychain.setPassword(
+                    privateKeyData,
+                    forAccount: PasswordAccount.privateKey,
+                    belongingToService: serviceName
+                )
             } else {
-                keychain.removeKey(withTag: KeyTag.privateKey)
+                keychain.removePassword(
+                    forAccount: PasswordAccount.privateKey,
+                    belongingToService: serviceName
+                )
             }
         }
     }

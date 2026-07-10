@@ -27,6 +27,10 @@ Upstream Tartelet uses Shape's Apple Developer keychain access group
 (`566MC7D8D4.dk.shape.Tartelet`). Holoplot release builds are ad-hoc signed
 without that team ID, so this fork uses the default app keychain instead.
 
+The GitHub App PEM is stored as a generic keychain password (not a SecKey item).
+Upstream stores RSA keys as `kSecClassKey`, which requires a developer team
+entitlement and fails with `-34018` on ad-hoc signed builds.
+
 ## Releases
 
 Build and tag from this fork; `sw__ci_infra` installs
