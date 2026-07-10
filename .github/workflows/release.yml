@@ -32,11 +32,16 @@ jobs:
       - name: Build Tartelet
         run: |
           set -euo pipefail
+          # Holoplot releases are installed on our own mac hosts; ad-hoc sign in CI
+          # (no access to upstream dk.shape Apple Developer provisioning profiles).
           xcodebuild \
             -scheme Tartelet \
             -configuration Release \
             -derivedDataPath DerivedData \
             -destination "platform=macOS" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="" \
             build
           app="DerivedData/Build/Products/Release/Tartelet.app"
           test -d "$app"
