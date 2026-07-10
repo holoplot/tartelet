@@ -22,7 +22,12 @@ jobs:
       - name: Generate Xcode project
         run: |
           xcodegen generate
-          swiftgen
+          # swiftgen can fail on GitHub-hosted macOS runners when parsing
+          # Assets.xcassets; generated Swift files are committed in-repo.
+          if ! swiftgen; then
+            test -f Packages/Settings/Sources/SettingsUI/Internal/Assets.swift
+            test -f Packages/MenuBar/Sources/MenuBar/Internal/L10n.swift
+          fi
 
       - name: Build Tartelet
         run: |
