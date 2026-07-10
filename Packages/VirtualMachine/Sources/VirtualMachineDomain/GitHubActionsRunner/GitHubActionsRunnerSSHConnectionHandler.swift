@@ -71,8 +71,8 @@ set -e pipefail
 set -x
 
 function onexit {
-  status=\\$?
-  echo "=== start-runner.sh exiting with status \\$status at \\$(date) ==="
+  exit_status=\\$?
+  echo "=== start-runner.sh exiting with status \\$exit_status at \\$(date) ==="
   sudo shutdown -h now
 }
 trap onexit EXIT
@@ -89,7 +89,8 @@ curl -Is https://github.com &>/dev/null
 # Install actions-runner when not registered yet (handles partial image trees).
 if [[ ! -f "\\$RUNNER_DIR/.runner" ]]; then
   echo "No .runner registration; installing actions-runner into \\$RUNNER_DIR"
-  rm -rf "\\$RUNNER_DIR"
+  # Holoplot images <= 20260710 may ship a root-owned TCC placeholder here.
+  sudo rm -rf "\\$RUNNER_DIR"
   curl -fLo "\\$RUNNER_ARCHIVE" -L "\(runnerDownloadURL)"
   mkdir -p "\\$RUNNER_DIR"
   tar xzf "\\$RUNNER_ARCHIVE" --directory "\\$RUNNER_DIR"
@@ -141,6 +142,11 @@ bootstrap_log="$home/.tartelet/launchagent-bootstrap.log"
 {
   echo "=== launchagent bootstrap $(date) ==="
   echo "home=$home uid=$(id -u)"
+
+  # Drop root-owned TCC placeholder trees from older Holoplot VM images.
+  if [ -d "$home/actions-runner" ] && [ ! -f "$home/actions-runner/.runner" ]; then
+    sudo rm -rf "$home/actions-runner"
+  fi
 
   if ! zsh -n "$home/start-runner.sh" 2>&1; then
     echo "warning: start-runner.sh syntax check failed; continuing anyway" >&2

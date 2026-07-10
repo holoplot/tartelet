@@ -28,6 +28,10 @@ Holoplot releases wait for the `gui/UID` launchd domain, log bootstrap output to
 `~/.tartelet/launchagent-bootstrap.log`, and start the runner via LaunchAgent
 with a direct `nohup` fallback when bootstrap fails.
 
+Older Holoplot VM images may ship a **root-owned** `~/actions-runner` TCC
+placeholder; `v0.12.0-holoplot.14+` removes it with `sudo rm -rf` before
+downloading actions-runner.
+
 ## Keychain (Holoplot ad-hoc releases)
 
 Upstream Tartelet uses Shape's Apple Developer keychain access group
