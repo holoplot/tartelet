@@ -66,15 +66,16 @@ trap onexit EXIT
 # Wait until we can connect to GitHub.
 until curl -Is https://github.com &>/dev/null; do :; done
 
-# Download the runner if the runner directory and
-# archive does not already exist.
-if [ ! -d \\$ACTIONS_RUNNER_DIRECTORY ]; then
-  if [ ! -f \\$ACTIONS_RUNNER_ARCHIVE ]; then
-    curl -o \\$ACTIONS_RUNNER_ARCHIVE -L "\(runnerDownloadURL)"
-    # Unarchive the runner.
-    mkdir -p \\$ACTIONS_RUNNER_DIRECTORY
-    tar xzf \\$ACTIONS_RUNNER_ARCHIVE --directory \\$ACTIONS_RUNNER_DIRECTORY
-  fi
+# Image build may leave a TCC placeholder tree without a real runner.
+if [ ! -f \\$ACTIONS_RUNNER_DIRECTORY/run.sh ]; then
+  rm -rf \\$ACTIONS_RUNNER_DIRECTORY
+fi
+
+# Download and install the runner if missing.
+if [ ! -f \\$ACTIONS_RUNNER_DIRECTORY/run.sh ]; then
+  curl -o \\$ACTIONS_RUNNER_ARCHIVE -L "\(runnerDownloadURL)"
+  mkdir -p \\$ACTIONS_RUNNER_DIRECTORY
+  tar xzf \\$ACTIONS_RUNNER_ARCHIVE --directory \\$ACTIONS_RUNNER_DIRECTORY
 fi
 
 # Holds environment passed to runner.
