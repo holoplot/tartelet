@@ -49,21 +49,27 @@ jobs:
           fi
 
       - name: Build Tartelet
-        env:
-          DEVELOPERID_APPLICATION_P12_BASE64: ${{ secrets.DEVELOPERID_APPLICATION_P12_BASE64 }}
-          DEVELOPERID_APPLICATION_P12_PSW: ${{ secrets.DEVELOPERID_APPLICATION_P12_PSW }}
         run: |
           set -euo pipefail
-          p12="$(mktemp)"
-          printf '%s' "$DEVELOPERID_APPLICATION_P12_BASE64" | base64 -d > "$p12"
           team_id="$(
-            openssl pkcs12 -in "$p12" -passin "pass:${DEVELOPERID_APPLICATION_P12_PSW}" -nodes -nokeys 2>/dev/null \
-              | openssl x509 -noout -subject \
-              | sed -n 's/.*OU=\([^/]*\).*/\1/p'
+            security find-identity -v -p codesigning 2>/dev/null \
+              | grep 'Developer ID Application' \
+              | head -1 \
+              | sed -nE 's/.*\(([A-Z0-9]{10})\).*/\1/p'
           )"
-          rm -f "$p12"
           if [ -z "$team_id" ]; then
-            echo "error: could not extract Apple team ID from Developer ID certificate" >&2
+            cert_pem="$(security find-certificate -c 'Developer ID Application' -p 2>/dev/null | head -1)"
+            if [ -n "$cert_pem" ]; then
+              team_id="$(
+                printf '%s' "$cert_pem" \
+                  | openssl x509 -noout -subject -nameopt RFC2253 2>/dev/null \
+                  | sed -nE 's/.*OU=([^,]+).*/\1/p'
+              )"
+            fi
+          fi
+          if [ -z "$team_id" ]; then
+            echo "error: could not determine Apple team ID from imported Developer ID certificate" >&2
+            security find-identity -v -p codesigning || true
             exit 1
           fi
           echo "Using DEVELOPMENT_TEAM=$team_id"
@@ -86,8 +92,6 @@ jobs:
           APPLE_NOTARIZE_ISSUER_ID: ${{ secrets.APPLE_NOTARIZE_ISSUER_ID }}
           APPLE_NOTARIZE_KEY_ID: ${{ secrets.APPLE_NOTARIZE_KEY_ID }}
           APPLE_NOTARIZE_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARIZE_KEY_P8_BASE64 }}
-          DEVELOPERID_APPLICATION_P12_BASE64: ${{ secrets.DEVELOPERID_APPLICATION_P12_BASE64 }}
-          DEVELOPERID_APPLICATION_P12_PSW: ${{ secrets.DEVELOPERID_APPLICATION_P12_PSW }}
         run: |
           set -euo pipefail
           app="DerivedData/Build/Products/Release/Tartelet.app"
@@ -102,14 +106,16 @@ jobs:
             rm -f "$key_file"
             notary_profile="holoplot-notary"
           elif [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_NOTARIZATION_PASSWORD:-}" ]; then
-            p12="$(mktemp)"
-            printf '%s' "$DEVELOPERID_APPLICATION_P12_BASE64" | base64 -d > "$p12"
             team_id="$(
-              openssl pkcs12 -in "$p12" -passin "pass:${DEVELOPERID_APPLICATION_P12_PSW}" -nodes -nokeys 2>/dev/null \
-                | openssl x509 -noout -subject \
-                | sed -n 's/.*OU=\([^/]*\).*/\1/p'
+              security find-identity -v -p codesigning 2>/dev/null \
+                | grep 'Developer ID Application' \
+                | head -1 \
+                | sed -nE 's/.*\(([A-Z0-9]{10})\).*/\1/p'
             )"
-            rm -f "$p12"
+            if [ -z "$team_id" ]; then
+              echo "error: could not determine team ID for password-based notarization" >&2
+              exit 1
+            fi
             xcrun notarytool store-credentials holoplot-notary \
               --apple-id "$APPLE_ID" \
               --team-id "$team_id" \
