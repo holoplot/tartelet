@@ -26,7 +26,9 @@ to the auto-login user's home (Terminal.app did this implicitly).
 
 Holoplot VM images seed TCC grants for `~/actions-runner/bin/Runner.Listener`
 using the build-time `USERNAME` (no filesystem placeholder). Tartelet
-`v0.12.0-holoplot.10+` installs actions-runner when `run.sh` is missing.
+`v0.12.0-holoplot.11+` logs runner startup to
+`~/Library/Logs/tartelet/actions-runner.log`, strips quarantine from downloaded
+binaries, and verifies `.runner` exists after `config.sh`.
 
 ## Keychain (Holoplot ad-hoc releases)
 

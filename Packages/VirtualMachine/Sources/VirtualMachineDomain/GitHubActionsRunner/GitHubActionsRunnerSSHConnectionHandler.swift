@@ -47,6 +47,13 @@ public struct GitHubActionsRunnerSSHConnectionHandler: VirtualMachineSSHConnecti
             with: appAccessToken,
             runnerScope: configuration.runnerScope
         )
+        let configFlags = [
+            configuration.runnerDisableUpdates ? "--disableupdate" : nil,
+            configuration.runnerDisableDefaultLabels ? "--no-default-labels" : nil
+        ].compactMap { $0 }.joined(separator: " ")
+        let configCommand = """
+./config.sh --url "\(runnerURL)" --unattended --ephemeral --replace --labels "\(configuration.runnerLabels)" --name "\(runnerName(for: virtualMachine))" --runnergroup "\(configuration.runnerGroup)" --work "_work" --token "\(runnerToken.rawValue)"\(configFlags.isEmpty ? "" : " \(configFlags)")
+"""
         let startRunnerScriptFilePath = "~/start-runner.sh"
         try await connection.executeCommand("touch \(startRunnerScriptFilePath)")
         try await connection.executeCommand("""
@@ -55,32 +62,43 @@ cat > \(startRunnerScriptFilePath) << EOF
 cd "\\$HOME"
 RUNNER_DIR="\\$HOME/actions-runner"
 RUNNER_ARCHIVE="\\$HOME/actions-runner.tar.gz"
+LOG="\\$HOME/Library/Logs/tartelet/actions-runner.log"
 
-# Ensure the virtual machine is restarted when a job is done.
+mkdir -p "\\$HOME/Library/Logs/tartelet"
+exec >> "\\$LOG" 2>&1
+echo "=== start-runner.sh begin \\$(date) ==="
 set -e pipefail
+set -x
+
 function onexit {
   status=\\$?
-  echo "start-runner.sh exiting with status \\$status at \\$(date)" >> "\\$HOME/Library/Logs/tartelet/actions-runner.log"
+  echo "=== start-runner.sh exiting with status \\$status at \\$(date) ==="
   sudo shutdown -h now
 }
 trap onexit EXIT
 
-mkdir -p "\\$HOME/Library/Logs/tartelet"
+# Wait for GitHub (max ~5 minutes).
+for _ in {1..60}; do
+  if curl -Is https://github.com &>/dev/null; then
+    break
+  fi
+  sleep 5
+done
+curl -Is https://github.com &>/dev/null
 
-# Wait until we can connect to GitHub.
-until curl -Is https://github.com &>/dev/null; do :; done
-
-# Image build must not ship a partial actions-runner tree; install if missing.
-if [[ ! -x "\\$RUNNER_DIR/run.sh" ]]; then
+# Install actions-runner when not registered yet (handles partial image trees).
+if [[ ! -f "\\$RUNNER_DIR/.runner" ]]; then
+  echo "No .runner registration; installing actions-runner into \\$RUNNER_DIR"
   rm -rf "\\$RUNNER_DIR"
   curl -fLo "\\$RUNNER_ARCHIVE" -L "\(runnerDownloadURL)"
   mkdir -p "\\$RUNNER_DIR"
   tar xzf "\\$RUNNER_ARCHIVE" --directory "\\$RUNNER_DIR"
+  xattr -dr com.apple.quarantine "\\$RUNNER_ARCHIVE" "\\$RUNNER_DIR" 2>/dev/null || true
 fi
 
 if [[ ! -x "\\$RUNNER_DIR/run.sh" ]]; then
-  echo "actions-runner install failed: \\$RUNNER_DIR/run.sh missing after extract" >&2
-  ls -la "\\$RUNNER_DIR" >&2 || true
+  echo "actions-runner install failed: \\$RUNNER_DIR/run.sh missing after extract"
+  ls -la "\\$RUNNER_DIR" || true
   exit 1
 fi
 
@@ -99,25 +117,19 @@ if [[ -f "\\$POST_RUN_SCRIPT_PATH" ]]; then
   RUNNER_ENV="\\${RUNNER_ENV}ACTIONS_RUNNER_HOOK_JOB_COMPLETED=\\${POST_RUN_SCRIPT_PATH}\\n"
 fi
 
-# Create .env file in runner's diectory.
 if [[ "\\$RUNNER_ENV" != "" ]]; then
-  echo "\\$RUNNER_ENV" >> "\\$RUNNER_DIR/.env"
+  printf '%b' "\\$RUNNER_ENV" >> "\\$RUNNER_DIR/.env"
 fi
 
-# Configure and run the runner.
 cd "\\$RUNNER_DIR"
-./config.sh\\\\
-  --url "\(runnerURL)"\\\\
-  --unattended\\\\
-  --ephemeral\\\\
-  --replace\\\\
-  --labels "\(configuration.runnerLabels)"\\\\
-  --name "\(runnerName(for: virtualMachine))"\\\\
-  --runnergroup "\(configuration.runnerGroup)"\\\\
-  --work "_work"\\\\
-  --token "\(runnerToken.rawValue)"\\\\
-  \(configuration.runnerDisableUpdates ? "--disableupdate" : "")\\\\
-  \(configuration.runnerDisableDefaultLabels ? "--no-default-labels" : "")
+echo "Registering runner: \(runnerName(for: virtualMachine))"
+\(configCommand)
+if [[ ! -f "\\$RUNNER_DIR/.runner" ]]; then
+  echo "config.sh finished but \\$RUNNER_DIR/.runner is missing"
+  ls -la "\\$RUNNER_DIR" || true
+  exit 1
+fi
+echo "Starting run.sh"
 ./run.sh
 EOF
 """)
