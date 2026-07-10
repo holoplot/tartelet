@@ -73,13 +73,27 @@ jobs:
             exit 1
           fi
           echo "Using DEVELOPMENT_TEAM=$team_id"
+          sign_identity="$(
+            security find-identity -v -p codesigning 2>/dev/null \
+              | grep 'Developer ID Application' \
+              | head -1 \
+              | sed -nE 's/.*"(Developer ID Application[^"]+)".*/\1/p'
+          )"
+          if [ -z "$sign_identity" ]; then
+            echo "error: could not find Developer ID Application signing identity" >&2
+            security find-identity -v -p codesigning || true
+            exit 1
+          fi
+          echo "Using CODE_SIGN_IDENTITY=$sign_identity"
           xcodebuild \
             -scheme Tartelet \
             -configuration Release \
             -derivedDataPath DerivedData \
             -destination "platform=macOS" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="$sign_identity" \
             DEVELOPMENT_TEAM="$team_id" \
+            PROVISIONING_PROFILE_SPECIFIER= \
             build
           app="DerivedData/Build/Products/Release/Tartelet.app"
           test -d "$app"
