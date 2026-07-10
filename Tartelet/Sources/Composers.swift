@@ -94,6 +94,7 @@ enum Composers {
 
 private extension Composers {
     private static func keychain(logger: Logger) -> Keychain {
-        Keychain(logger: logger, accessGroup: "566MC7D8D4.dk.shape.Tartelet")
+        // Holoplot ad-hoc builds: default keychain (no team-specific access group).
+        Keychain(logger: logger)
     }
 }

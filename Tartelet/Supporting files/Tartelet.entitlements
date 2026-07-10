@@ -4,9 +4,5 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<false/>
-	<key>keychain-access-groups</key>
-	<array>
-		<string>$(AppIdentifierPrefix)dk.shape.Tartelet</string>
-	</array>
 </dict>
 </plist>

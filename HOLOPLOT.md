@@ -21,6 +21,12 @@ background process in an active WindowServer session.
 
 Runner logs: `~/Library/Logs/tartelet/actions-runner.log` inside the VM.
 
+## Keychain (Holoplot ad-hoc releases)
+
+Upstream Tartelet uses Shape's Apple Developer keychain access group
+(`566MC7D8D4.dk.shape.Tartelet`). Holoplot release builds are ad-hoc signed
+without that team ID, so this fork uses the default app keychain instead.
+
 ## Releases
 
 Build and tag from this fork; `sw__ci_infra` installs

@@ -42,9 +42,12 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM="" \
+            ENABLE_HARDENED_RUNTIME=NO \
             build
           app="DerivedData/Build/Products/Release/Tartelet.app"
           test -d "$app"
+          # Re-sign so the shipped bundle matches entitlements (no upstream keychain group).
+          codesign --force --deep --sign - "$app"
           ditto -c -k --sequesterRsrc --keepParent "$app" Tartelet.zip
 
       - name: Upload release asset
